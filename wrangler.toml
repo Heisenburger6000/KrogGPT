@@ -1,0 +1,9 @@
+name = "krog-gpt-api"
+main = "index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Replace this with the ORIGIN of your GitHub Pages site, not its full page URL.
+# Example: https://yourname.github.io
+ALLOWED_ORIGIN = "https://YOUR-GITHUB-USERNAME.github.io"
+OPENAI_MODEL = "gpt-6-luna"
