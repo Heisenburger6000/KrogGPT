@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>krog-gpt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--bg:rgb(15,15,15);--surface:#1a1a1a;--text:#b8b8b8;--muted:#8a8a8a;--accent:#ff5a00;--accent-text:#fff;--user:#ff5a00;--border:#4a4a4a;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@font-face{font-family:"Culture";font-weight:400;src:local("Culture"),local("Culture Regular"),local("Culture-Regular"),local("CultureTrial-Regular"),local("Culture Trial Regular"),local("Culture Trial")}
+@font-face{font-family:"Culture";font-weight:700;src:local("Culture Bold"),local("Culture-Bold"),local("CultureTrial-Bold"),local("Culture Trial Bold")}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:"Culture","Poppins","Helvetica Neue",Arial,sans-serif;font-size:16px}
+#app{display:flex;flex-direction:column;height:100%;max-width:760px;margin:0 auto}
+header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.logo{width:34px;height:34px;border-radius:10px;background:var(--accent);color:var(--accent-text);display:grid;place-items:center;font-weight:800;border:1px solid #666}
+h1{font-size:1.1rem;margin:0;letter-spacing:.02em}
+header small{color:var(--muted);display:block;font-size:.75rem}
+header button{margin-left:auto}
+#log{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:85%;padding:10px 14px;border-radius:16px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border)}
+.bot{align-self:flex-start;background:var(--surface);border-bottom-left-radius:4px}
+.me{align-self:flex-end;background:var(--user);color:#d0d0d0;border-bottom-right-radius:4px}
+.hello{margin:auto;text-align:center;color:var(--muted)}
+.hello b{display:block;font-size:1.4rem;color:var(--text);margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}
+button{font:inherit;cursor:pointer}
+.chip,.ghost{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:999px;padding:7px 12px;font-size:.85rem}
+form{display:flex;gap:8px;padding:12px 16px}
+textarea{flex:1;resize:none;font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px 12px;max-height:140px}
+textarea:focus{outline:none;border-color:#9a9a9a}
+textarea::placeholder{color:#8a8a8a}
+#send{background:transparent;color:var(--accent);border:1px solid var(--accent);border-radius:14px;padding:0 18px;font-weight:700}
+#send:disabled{opacity:.5;cursor:default}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">K</div>
+    <div><h1>krog-gpt</h1><small>your fatass chat bot</small></div>
+    <button class="ghost" id="clear" type="button">New chat</button>
+  </header>
+  <div id="log" aria-live="polite"></div>
+  <div style="display:flex;gap:8px;padding:12px 16px">
+    <textarea id="in" rows="1" placeholder="Message krog-gpt…" aria-label="Message"></textarea>
+    <button id="send" type="button">Send</button>
+  </div>
+</div>
+<script>
+(function(){
+var SYSTEM="You are krog-gpt, a friendly, witty and helpful AI chatbot. Answer clearly and concisely in plain text (no markdown headings). Keep a warm, slightly playful tone.";
+var SUGGEST=["Write a poem about Breaking Bad","How to accept Breaking Bad","How is Alan so awesome?","Why is Alan so cool?","How do I become more like Alan?","How to go down in weight?"];
+var log=document.getElementById("log"),inp=document.getElementById("in"),send=document.getElementById("send");
+var history=[],busy=false,sample=null;
+
+function hello(){
+  log.innerHTML="";
+  var d=document.createElement("div");d.className="hello";
+  d.innerHTML="<b>Hi, I’m krog-gpt 👋</b>Ask me anything.";
+  var c=document.createElement("div");c.className="chips";
+  SUGGEST.forEach(function(s){var b=document.createElement("button");b.type="button";b.className="chip";b.textContent=s;b.onclick=function(){ask(s)};c.appendChild(b)});
+  d.appendChild(c);log.appendChild(d);
+}
+function add(role,text){
+  var h=log.querySelector(".hello");if(h)h.remove();
+  var m=document.createElement("div");m.className="msg "+(role==="user"?"me":"bot");m.textContent=text;
+  log.appendChild(m);log.scrollTop=log.scrollHeight;return m;
+}
+async function ask(text){
+  text=(text||"").trim();if(!text||busy)return;
+  busy=true;send.disabled=true;inp.value="";inp.style.height="auto";
+  add("user",text);history.push({role:"user",content:text});
+  var out=add("bot","…");
+  try{
+    if(!sample)sample=await claude.use("sample");
+    if(!sample){out.textContent="Chat isn’t available in this view. Open the page in claude.ai to talk to me.";busy=false;send.disabled=false;return}
+    var msgs=history.slice(-20).map(function(m){return {role:m.role,content:m.content}});
+    msgs[0]={role:"user",content:SYSTEM+"\n\nConversation begins. "+msgs[0].content};
+    var r=await sample(msgs,{cache:false,onText:function(t){out.textContent=t.text;log.scrollTop=log.scrollHeight}});
+    out.textContent=r.text;history.push({role:"assistant",content:r.text});
+  }catch(e){
+    out.textContent=(e&&e.code==="rate_limited")?"Slow down a little, then try again.":(e&&e.code==="not_granted")?"I need permission to answer. Send your message again and approve the prompt.":"Something went wrong. Please try again.";
+    history.pop();
+  }
+  busy=false;send.disabled=false;inp.focus();log.scrollTop=log.scrollHeight;
+}
+send.onclick=function(){ask(inp.value)};
+inp.addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask(inp.value)}});
+inp.addEventListener("input",function(){inp.style.height="auto";inp.style.height=Math.min(inp.scrollHeight,140)+"px"});
+document.getElementById("clear").onclick=function(){if(busy)return;history=[];hello()};
+hello();
+})();
+</script>
+</body>
+</html>
