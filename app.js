@@ -1,144 +1,172 @@
-(() => {
+from pathlib import Path
+p = Path("/mnt/data/krog-gpt-app.js")
+code = r'''(() => {
   "use strict";
 
+  // krog-gpt: real AI replies through a shared, anonymous free gateway.
+  // No personal API key is required. Shared service limits/availability apply.
+  const API_URL = "https://api.llmfaucet.dev/v1/chat/completions";
+  const MODEL = "auto";
   const SYSTEM_PROMPT =
-    "You are krog-gpt, a friendly, witty and helpful AI chatbot. " +
-    "Answer clearly and concisely. Use a warm, slightly playful tone. " +
-    "Use Markdown when it makes an answer easier to read.";
+    "You are krog-gpt, a friendly, witty, slightly chaotic chatbot. " +
+    "Be genuinely helpful and answer the user's actual question. " +
+    "Keep a playful sense of humor, but do not make up facts. " +
+    "Use concise answers unless the user asks for detail.";
 
   const SUGGESTIONS = [
     "Write a poem about Breaking Bad",
-    "How do I get into a new hobby?",
     "Tell me something surprising",
-    "Help me make a simple plan"
+    "How is Alan so awesome?",
+    "Give me life advice"
   ];
 
   const log = document.getElementById("log");
-  const input = document.getElementById("message");
+  const input = document.getElementById("message") || document.getElementById("in");
   const form = document.getElementById("composer");
   const send = document.getElementById("send");
   const clear = document.getElementById("clear");
-  const chips = document.getElementById("chips");
-
   let history = [];
   let busy = false;
 
-  function scrollToBottom() {
+  function scrollDown() {
     log.scrollTop = log.scrollHeight;
   }
 
-  function addMessage(role, text, extraClass = "") {
+  function addMessage(role, text, pending = false) {
     const welcome = document.getElementById("welcome");
     if (welcome) welcome.remove();
 
     const bubble = document.createElement("div");
-    bubble.className = `msg ${role === "user" ? "me" : "bot"} ${extraClass}`.trim();
+    bubble.className = `msg ${role === "user" ? "me" : "bot"}${pending ? " pending" : ""}`;
     bubble.textContent = text;
     log.appendChild(bubble);
-    scrollToBottom();
+    scrollDown();
     return bubble;
   }
 
   function setBusy(value) {
     busy = value;
-    send.disabled = value;
-    input.disabled = value;
-    send.setAttribute("aria-label", value ? "Waiting for response" : "Send message");
+    if (send) send.disabled = value;
+    if (input) input.disabled = value;
   }
 
   function showWelcome() {
-    log.innerHTML = `
-      <div class="welcome" id="welcome">
-        <div class="welcome-mark">K</div>
-        <h2>Hi, I’m krog-gpt 👋</h2>
-        <p>Ask me anything. What are we figuring out today?</p>
-        <div class="chips" id="chips"></div>
-      </div>`;
-    const chipContainer = document.getElementById("chips");
+    log.innerHTML = "";
+    const welcome = document.createElement("div");
+    welcome.className = "welcome hello";
+    welcome.id = "welcome";
+
+    const heading = document.createElement("b");
+    heading.textContent = "Hi, I’m krog-gpt 👋";
+    const intro = document.createElement("p");
+    intro.textContent = "Ask me anything.";
+
+    const chips = document.createElement("div");
+    chips.className = "chips";
     SUGGESTIONS.forEach((suggestion) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "chip";
       button.textContent = suggestion;
       button.addEventListener("click", () => ask(suggestion));
-      chipContainer.appendChild(button);
+      chips.appendChild(button);
     });
+
+    welcome.append(heading, intro, chips);
+    log.appendChild(welcome);
   }
 
   async function ask(rawText) {
     const text = String(rawText || "").trim();
     if (!text || busy) return;
 
-    const apiUrl = window.KROG_GPT_CONFIG?.apiUrl;
-    if (!apiUrl || apiUrl.includes("PASTE_YOUR_")) {
-      addMessage("assistant", "The chatbot is not connected yet. Follow the README to deploy the API Worker and add its URL to config.js.");
-      return;
-    }
-
     setBusy(true);
     input.value = "";
-    input.style.height = "auto";
+    if (input.style) input.style.height = "auto";
+
     addMessage("user", text);
     history.push({ role: "user", content: text });
-
-    const pending = addMessage("assistant", "Thinking…", "pending");
+    const pending = addMessage("assistant", "krog-gpt is thinking…", true);
 
     try {
-      const response = await fetch(apiUrl, {
+      const response = await fetch(API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history.slice(-20) })
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer free"
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            ...history.slice(-16)
+          ],
+          stream: false
+        })
       });
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const message = data.error || `Request failed (${response.status}).`;
-        throw new Error(message);
-      }
-      if (typeof data.reply !== "string" || !data.reply.trim()) {
-        throw new Error("The AI returned an empty response. Please try again.");
+        const detail = data?.error?.message || data?.message;
+        if (response.status === 429) {
+          throw new Error("The free shared AI limit has been reached. Wait a bit and try again.");
+        }
+        throw new Error(detail || `The AI service returned error ${response.status}.`);
       }
 
-      pending.textContent = data.reply;
+      const answer = data?.choices?.[0]?.message?.content;
+      if (typeof answer !== "string" || !answer.trim()) {
+        throw new Error("The AI returned an empty reply. Please try again.");
+      }
+
+      pending.textContent = answer.trim();
       pending.classList.remove("pending");
-      history.push({ role: "assistant", content: data.reply });
+      history.push({ role: "assistant", content: answer.trim() });
     } catch (error) {
-      pending.textContent = `Sorry, I couldn't get a response. ${error.message || "Please try again."}`;
+      pending.textContent =
+        "I couldn't reach the free AI service. " +
+        (error.message || "Please try again in a moment.");
       pending.classList.remove("pending");
-      // Keep the user's message in the visible chat, but don't send a failed turn
-      // as context on the next request.
       history.pop();
     } finally {
       setBusy(false);
       input.focus();
-      scrollToBottom();
+      scrollDown();
     }
   }
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    ask(input.value);
-  });
+  if (form) {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      ask(input.value);
+    });
+  } else {
+    // Compatibility with the original HTML version that used a Send button.
+    send?.addEventListener("click", () => ask(input.value));
+  }
 
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      form.requestSubmit();
+      if (form) form.requestSubmit();
+      else ask(input.value);
     }
   });
 
   input.addEventListener("input", () => {
     input.style.height = "auto";
-    input.style.height = `${Math.min(input.scrollHeight, 150)}px`;
+    input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
   });
 
-  clear.addEventListener("click", () => {
+  clear?.addEventListener("click", () => {
     if (busy) return;
     history = [];
-    input.value = "";
     showWelcome();
     input.focus();
   });
 
   showWelcome();
 })();
+'''
+p.write_text(code, encoding="utf-8")
+print(p)
